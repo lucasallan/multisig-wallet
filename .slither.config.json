@@ -1,0 +1,8 @@
+{
+    "filter_paths": "contracts/test/MockReentrantContract.sol|contracts/test/RejectEther.sol|node_modules/@openzeppelin/contracts/utils/cryptography/ECDSA.sol",
+    "exclude_informational": true,
+    "exclude_low": false,
+    "exclude_medium": false,
+    "exclude_high": false,
+    "detectors_to_exclude": "naming-convention"
+}
