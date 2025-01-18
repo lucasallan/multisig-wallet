@@ -81,7 +81,6 @@ describe("MultiSigWallet", function () {
 
 
     const MultiSigWallet = await ethers.getContractFactory("MultiSigWallet");
-    // Make sure signers are in ascending order
     const orderedSigners = [owner, addr1, addr2].map(s => s.address).sort();
     multiSigWallet = await MultiSigWallet.deploy(orderedSigners, 2);
     await multiSigWallet.waitForDeployment();
@@ -98,22 +97,18 @@ describe("MultiSigWallet", function () {
     it("Should revert if trying to deploy with invalid parameters", async function () {
       const MultiSigWallet = await ethers.getContractFactory("MultiSigWallet");
       
-      // Test with duplicate signers (effectively unordered since equal)
       await expect(
         MultiSigWallet.deploy([owner.address, owner.address, addr1.address], 1)
       ).to.be.revertedWithCustomError(MultiSigWallet, "SignerArrayNotOrdered");
 
-      // Test with zero address
       await expect(
         MultiSigWallet.deploy([owner.address, ethers.ZeroAddress], 1)
       ).to.be.revertedWithCustomError(MultiSigWallet, "SignerZeroAddress");
 
-      // Test with invalid threshold
       await expect(
         MultiSigWallet.deploy([owner.address, addr1.address], 0)
       ).to.be.revertedWithCustomError(MultiSigWallet, "InvalidThreshold");
 
-      // Test with unordered signers (owner > addr1, so [owner, addr1] is descending)
       await expect(
         MultiSigWallet.deploy([owner.address, addr1.address], 1)
       ).to.be.revertedWithCustomError(MultiSigWallet, "SignerArrayNotOrdered");

@@ -32,8 +32,8 @@ contract MultiSigWallet is ReentrancyGuard {
         "SignerUpdate(uint256 id,address[] signers,uint256 minNumberOfSigners,uint256 chainId,uint256 chainNonce)"
     );
 
-    event SignersUpdated(uint256 id, address indexed submitter);
-    event TransactionExecuted(uint256 indexed id, address indexed executor, bool success);
+    event SignersUpdated(uint256 id, address indexed submitter, address[] signers, uint256 threshold);
+    event TransactionExecuted(uint256 indexed id, address indexed executor, address indexed to, uint256 value, bool success);
 
     struct Transaction {
         uint256 id;
@@ -137,7 +137,7 @@ contract MultiSigWallet is ReentrancyGuard {
         if (transaction.signatureCount < threshold) revert NotEnoughSignatures();
 
         (bool success, ) = _to.call{value: _value}(_data);
-        emit TransactionExecuted(_id, msg.sender, success);
+        emit TransactionExecuted(_id, msg.sender, _to, _value, success);
         return _id;
     }
 
@@ -187,7 +187,7 @@ contract MultiSigWallet is ReentrancyGuard {
             signers.push(_signers[i]);
         }
         threshold = _minNumberOfSigners;
-        emit SignersUpdated(_id, msg.sender);
+        emit SignersUpdated(_id, msg.sender, _signers, _minNumberOfSigners);
         return _id;
     }
 
@@ -199,11 +199,17 @@ contract MultiSigWallet is ReentrancyGuard {
      * @return bool True if the address is a signer, false otherwise
      */
     function isSigner(address _signer) public view returns (bool) {
-        for (uint256 i = 0; i < signers.length; i++) {
-            if (signers[i] == _signer) {
+        uint256 left = 0;
+        uint256 right = signers.length;
+
+        while (left < right) {
+            uint256 mid = left + (right - left) / 2;
+            if (signers[mid] == _signer) {
                 return true;
-            } else if (signers[i] > _signer) {
-                return false;
+            } else if (signers[mid] < _signer) {
+                left = mid + 1;
+            } else {
+                right = mid;
             }
         }
         return false;
