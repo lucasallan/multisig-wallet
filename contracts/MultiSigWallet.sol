@@ -25,11 +25,11 @@ contract MultiSigWallet is ReentrancyGuard {
     );
     
     bytes32 private constant TRANSACTION_TYPEHASH = keccak256(
-        "Transaction(uint256 id,address to,uint256 value,bytes data,uint256 chainId,uint256 chainNonce)"
+        "Transaction(uint256 id,address to,uint256 value,bytes data,uint256 chainId)"
     );
     
     bytes32 private constant SIGNER_UPDATE_TYPEHASH = keccak256(
-        "SignerUpdate(uint256 id,address[] signers,uint256 minNumberOfSigners,uint256 chainId,uint256 chainNonce)"
+        "SignerUpdate(uint256 id,address[] signers,uint256 minNumberOfSigners,uint256 chainId)"
     );
 
     event SignersUpdated(uint256 id, address indexed submitter, address[] signers, uint256 threshold);
@@ -59,7 +59,6 @@ contract MultiSigWallet is ReentrancyGuard {
 
     address[] public signers;
     uint256 public threshold;
-    uint256 public immutable chainNonce;
     uint256 public immutable chainId;
 
     bytes32 private immutable DOMAIN_SEPARATOR;
@@ -76,7 +75,7 @@ contract MultiSigWallet is ReentrancyGuard {
         }
 
         threshold = _threshold;
-        chainNonce = block.timestamp; // Use deployment time as unique chain nonce
+
         string memory version = "1";
         chainId = block.chainid;
 
@@ -255,8 +254,7 @@ contract MultiSigWallet is ReentrancyGuard {
                 _to,
                 _value,
                 keccak256(_data),
-                chainId,
-                chainNonce
+                chainId
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash));
@@ -280,8 +278,7 @@ contract MultiSigWallet is ReentrancyGuard {
                 _id,
                 keccak256(abi.encodePacked(_signers)),
                 _minNumberOfSigners,
-                chainId,
-                chainNonce
+                chainId
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash));

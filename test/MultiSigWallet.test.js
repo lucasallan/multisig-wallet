@@ -12,7 +12,6 @@ describe("MultiSigWallet", function () {
 
   async function signTransaction(signer, transactionId, to, value, data) {
     const chainId = await multiSigWallet.chainId();
-    const chainNonce = await multiSigWallet.chainNonce();
     const domain = {
       name: 'MultiSigWallet',
       version: '1',
@@ -26,27 +25,23 @@ describe("MultiSigWallet", function () {
         { name: 'to', type: 'address' },
         { name: 'value', type: 'uint256' },
         { name: 'data', type: 'bytes' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'chainNonce', type: 'uint256' }
+        { name: 'chainId', type: 'uint256' }
       ]
     };
 
-    const valueToSign = {
-      id: BigInt(transactionId),
+    const message = {
+      id: transactionId,
       to: to,
       value: value,
       data: data,
-      chainId: chainId,
-      chainNonce: chainNonce
+      chainId: chainId
     };
 
-    const signature = await signer.signTypedData(domain, types, valueToSign);
-    return ethers.getBytes(signature);
+    return await signer.signTypedData(domain, types, message);
   }
 
   async function signSignerUpdate(signer, id, newSigners, minSigners) {
     const chainId = await multiSigWallet.chainId();
-    const chainNonce = await multiSigWallet.chainNonce();
     const domain = {
       name: 'MultiSigWallet',
       version: '1',
@@ -59,21 +54,18 @@ describe("MultiSigWallet", function () {
         { name: 'id', type: 'uint256' },
         { name: 'signers', type: 'address[]' },
         { name: 'minNumberOfSigners', type: 'uint256' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'chainNonce', type: 'uint256' }
+        { name: 'chainId', type: 'uint256' }
       ]
     };
 
-    const valueToSign = {
-      id: BigInt(id),
+    const message = {
+      id: id,
       signers: newSigners,
-      minNumberOfSigners: BigInt(minSigners),
-      chainId: BigInt(chainId),
-      chainNonce: BigInt(chainNonce)
+      minNumberOfSigners: minSigners,
+      chainId: chainId
     };
 
-    const signature = await signer.signTypedData(domain, types, valueToSign);
-    return ethers.getBytes(signature);
+    return await signer.signTypedData(domain, types, message);
   }
 
   beforeEach(async function () {
