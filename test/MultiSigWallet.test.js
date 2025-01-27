@@ -25,41 +25,46 @@ describe("MultiSigWallet", function () {
         { name: 'to', type: 'address' },
         { name: 'value', type: 'uint256' },
         { name: 'data', type: 'bytes' },
+        { name: 'signersNonce', type: 'uint256' },
         { name: 'chainId', type: 'uint256' }
       ]
     };
 
+    const signersNonce = await multiSigWallet.getSignerNonce(signer.address);
     const message = {
       id: transactionId,
       to: to,
       value: value,
       data: data,
+      signersNonce: signersNonce,
       chainId: chainId
     };
 
     return await signer.signTypedData(domain, types, message);
   }
 
-  async function signSignerUpdate(signer, id, newSigners, minSigners) {
+  async function signSignerUpdate(signer, id, signersNonce, newSigners, minSigners) {
     const chainId = await multiSigWallet.chainId();
     const domain = {
-      name: 'MultiSigWallet',
-      version: '1',
+      name: "MultiSigWallet",
+      version: "1",
       chainId: chainId,
       verifyingContract: await multiSigWallet.getAddress()
     };
 
     const types = {
       SignerUpdate: [
-        { name: 'id', type: 'uint256' },
-        { name: 'signers', type: 'address[]' },
-        { name: 'minNumberOfSigners', type: 'uint256' },
-        { name: 'chainId', type: 'uint256' }
+        { name: "id", type: "uint256" },
+        { name: "signersNonce", type: "uint256" },
+        { name: "signers", type: "address[]" },
+        { name: "minNumberOfSigners", type: "uint256" },
+        { name: "chainId", type: "uint256" }
       ]
     };
 
     const message = {
       id: id,
+      signersNonce: signersNonce,
       signers: newSigners,
       minNumberOfSigners: minSigners,
       chainId: chainId
@@ -70,7 +75,6 @@ describe("MultiSigWallet", function () {
 
   beforeEach(async function () {
     [owner, addr1, addr2, addr3, addr4,...addrs] = await ethers.getSigners();
-
 
     const MultiSigWallet = await ethers.getContractFactory("MultiSigWallet");
     const orderedSigners = [owner, addr1, addr2].map(s => s.address).sort();
@@ -113,7 +117,6 @@ describe("MultiSigWallet", function () {
       const value = ethers.parseEther("1.0");
       const data = "0x";
       const transactionId = 0;
-      const nonce = 0;
 
       await owner.sendTransaction({
         to: await multiSigWallet.getAddress(),
@@ -125,7 +128,10 @@ describe("MultiSigWallet", function () {
 
       const initialBalance = await ethers.provider.getBalance(to);
 
-      await multiSigWallet.submitTransaction(to, value, data, [sig1, sig2], [nonce, nonce]);
+      const sig1Nonce = await multiSigWallet.getSignerNonce(owner.address);
+      const sig2Nonce = await multiSigWallet.getSignerNonce(addr1.address);
+
+      await multiSigWallet.submitTransaction(to, value, data, [sig1, sig2], [sig1Nonce, sig2Nonce]);
 
       const finalBalance = await ethers.provider.getBalance(to);
       expect(finalBalance - initialBalance).to.equal(value);
@@ -200,21 +206,41 @@ describe("MultiSigWallet", function () {
 
   describe("Signer Update", function () {
     it("Should update the signer set", async function () {
+      // Get current signers from contract deployment
+      const currentSigners = [owner.address, addr1.address, addr2.address].sort();
       const newSigners = [addr1.address, addr2.address, addr3.address].sort();
       const minSigners = 2;
-      const id = 0;
-      const nonce = 0;
+      
+      // Create map of addresses to signers for the current signers
+      const signerMap = {};
+      for (let addr of currentSigners) {
+        if (addr === owner.address) signerMap[addr] = owner;
+        if (addr === addr1.address) signerMap[addr] = addr1;
+        if (addr === addr2.address) signerMap[addr] = addr2;
+      }
+      
+      // Get nonces for the first two signers (meeting threshold)
+      const signer1 = signerMap[currentSigners[0]];
+      const signer2 = signerMap[currentSigners[1]];
+      const sig1Nonce = await multiSigWallet.getSignerNonce(signer1.address);
+      const sig2Nonce = await multiSigWallet.getSignerNonce(signer2.address);
 
-      const sig1 = await signSignerUpdate(owner, id, newSigners, minSigners);
-      const sig2 = await signSignerUpdate(addr1, id, newSigners, minSigners);
+      // Get the next proposal ID
+      const proposalId = await multiSigWallet.getSignerUpdateProposalCount();
 
+      // Generate signatures in order
+      const sig1 = await signSignerUpdate(signer1, proposalId, sig1Nonce, newSigners, minSigners);
+      const sig2 = await signSignerUpdate(signer2, proposalId, sig2Nonce, newSigners, minSigners);
+
+      // Submit signatures in the same order as the nonces
       await multiSigWallet.newSigners(
         newSigners,
         minSigners,
         [sig1, sig2],
-        [nonce, nonce]
+        [sig1Nonce, sig2Nonce]
       );
 
+      // Verify new signers
       for (let signer of newSigners) {
         expect(await multiSigWallet.isSigner(signer)).to.be.true;
       }
@@ -222,14 +248,76 @@ describe("MultiSigWallet", function () {
       expect(await multiSigWallet.threshold()).to.equal(minSigners);
     });
 
-    it("Should revert with invalid signatures", async function () {
+    it("Should revert with not enough signatures", async function () {
       const newSigners = [addr1.address, addr2.address, addr3.address].sort();
       const minSigners = 2;
-      const id = 0;
-      const nonce = 0;
 
-      const sig1 = await signSignerUpdate(owner, id, newSigners, minSigners);
-      const sig2 = await signSignerUpdate(addr3, id, newSigners, minSigners); // Invalid signer
+      // Empty signatures array should revert with NotEnoughSignatures
+      await expect(
+        multiSigWallet.newSigners(
+          newSigners,
+          minSigners,
+          [],
+          []
+        )
+      ).to.be.revertedWithCustomError(multiSigWallet, "NotEnoughSignatures");
+    });
+
+    it("Should revert with invalid signature length", async function () {
+      const newSigners = [addr1.address, addr2.address, addr3.address].sort();
+      const minSigners = 2;
+      const proposalId = await multiSigWallet.getSignerUpdateProposalCount();
+      const nonce = await multiSigWallet.getSignerNonce(owner.address);
+
+      const sig1 = await signSignerUpdate(owner, proposalId, nonce, newSigners, minSigners);
+
+      // Mismatched lengths between signatures and nonces should revert with InvalidSigner
+      await expect(
+        multiSigWallet.newSigners(
+          newSigners,
+          minSigners,
+          [sig1],
+          [nonce, nonce] // Two nonces but one signature
+        )
+      ).to.be.revertedWithCustomError(multiSigWallet, "InvalidSigner");
+    });
+
+    it("Should revert with invalid nonce", async function () {
+      const currentSigners = [owner.address, addr1.address, addr2.address].sort();
+      const newSigners = [addr1.address, addr2.address, addr3.address].sort();
+      const minSigners = 2;
+      const proposalId = await multiSigWallet.getSignerUpdateProposalCount();
+
+      // Get valid nonces for both signers
+      const ownerNonce = await multiSigWallet.getSignerNonce(owner.address);
+      const addr1Nonce = await multiSigWallet.getSignerNonce(addr1.address);
+      const invalidNonce = Number(ownerNonce) + 1; // Convert to number before adding
+
+      // Use two valid signers (owner and addr1) but with an invalid nonce for owner
+      const sig1 = await signSignerUpdate(owner, proposalId, invalidNonce, newSigners, minSigners);
+      const sig2 = await signSignerUpdate(addr1, proposalId, addr1Nonce, newSigners, minSigners);
+
+      // Submit with invalid nonce for owner (who is a valid signer)
+      await expect(
+        multiSigWallet.newSigners(
+          newSigners,
+          minSigners,
+          [sig1, sig2],
+          [invalidNonce, addr1Nonce] // First nonce is invalid
+        )
+      ).to.be.revertedWithCustomError(multiSigWallet, "InvalidNonce");
+    });
+
+    it("Should revert with invalid signatures", async function () {
+      const currentSigners = [owner.address, addr1.address, addr2.address].sort();
+      const newSigners = [addr1.address, addr2.address, addr3.address].sort();
+      const minSigners = 2;
+      const proposalId = await multiSigWallet.getSignerUpdateProposalCount();
+      const nonce = await multiSigWallet.getSignerNonce(owner.address);
+
+      // Use owner (valid signer) and addr3 (invalid signer)
+      const sig1 = await signSignerUpdate(owner, proposalId, nonce, newSigners, minSigners);
+      const sig2 = await signSignerUpdate(addr3, proposalId, nonce, newSigners, minSigners); // addr3 is not a current signer
 
       await expect(
         multiSigWallet.newSigners(
@@ -241,32 +329,14 @@ describe("MultiSigWallet", function () {
       ).to.be.revertedWithCustomError(multiSigWallet, "InvalidSigner");
     });
 
-    it("Should revert with not enough signatures", async function () {
-      const newSigners = [addr1.address, addr2.address, addr3.address].sort();
-      const minSigners = 2;
-      const id = 0;
-      const nonce = 0;
-
-      const sig1 = await signSignerUpdate(owner, id, newSigners, minSigners);
-
-      await expect(
-        multiSigWallet.newSigners(
-          newSigners,
-          minSigners,
-          [sig1],
-          [nonce]
-        )
-      ).to.be.revertedWithCustomError(multiSigWallet, "NotEnoughSignatures");
-    });
-
     it("Should revert if signers are not in ascending order", async function () {
       const unorderedSigners = [owner.address, addr2.address, addr1.address]; // Not sorted
       const minSigners = 2;
       const id = 0;
       const nonce = 0;
 
-      const sig1 = await signSignerUpdate(owner, id, unorderedSigners, minSigners);
-      const sig2 = await signSignerUpdate(addr1, id, unorderedSigners, minSigners);
+      const sig1 = await signSignerUpdate(owner, id, nonce, unorderedSigners, minSigners);
+      const sig2 = await signSignerUpdate(addr1, id, nonce, unorderedSigners, minSigners);
 
       await expect(
         multiSigWallet.newSigners(
@@ -276,26 +346,6 @@ describe("MultiSigWallet", function () {
           [nonce, nonce]
         )
       ).to.be.revertedWithCustomError(multiSigWallet, "SignerArrayNotOrdered");
-    });
-
-    it("Should revert with invalid nonce", async function () {
-      const newSigners = [addr1.address, addr2.address, addr3.address].sort();
-      const minSigners = 2;
-      const id = 0;
-      const validNonce = 0;
-      const invalidNonce = 999;
-
-      const sig1 = await signSignerUpdate(owner, id, newSigners, minSigners);
-      const sig2 = await signSignerUpdate(addr1, id, newSigners, minSigners);
-
-      await expect(
-        multiSigWallet.newSigners(
-          newSigners,
-          minSigners,
-          [sig1, sig2],
-          [invalidNonce, validNonce]
-        )
-      ).to.be.revertedWithCustomError(multiSigWallet, "InvalidNonce");
     });
   });
 

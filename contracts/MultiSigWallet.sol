@@ -25,11 +25,11 @@ contract MultiSigWallet is ReentrancyGuard {
     );
     
     bytes32 private constant TRANSACTION_TYPEHASH = keccak256(
-        "Transaction(uint256 id,address to,uint256 value,bytes data,uint256 chainId)"
+        "Transaction(uint256 id,address to,uint256 value,bytes data,int256 signersNonce,uint256 chainId)"
     );
     
     bytes32 private constant SIGNER_UPDATE_TYPEHASH = keccak256(
-        "SignerUpdate(uint256 id,address[] signers,uint256 minNumberOfSigners,uint256 chainId)"
+        "SignerUpdate(uint256 id,uint256 signersNonce,address[] signers,uint256 minNumberOfSigners,uint256 chainId)"
     );
 
     event SignersUpdated(uint256 id, address indexed submitter, address[] signers, uint256 threshold);
@@ -112,6 +112,11 @@ contract MultiSigWallet is ReentrancyGuard {
         if (_signatures.length < threshold) revert NotEnoughSignatures();
         if (_signersNonces.length != _signatures.length) revert InvalidNonce();
 
+        for (uint256 i = 0; i < _signatures.length; i++) {
+            if (seenSignatures[keccak256(_signatures[i])]) revert SignatureAlreadyUsed();
+            seenSignatures[keccak256(_signatures[i])] = true;
+        }
+
         uint256 _id = transactionCount++;
         Transaction storage transaction = transactions[_id];
         transaction.id = _id;
@@ -119,9 +124,11 @@ contract MultiSigWallet is ReentrancyGuard {
         transaction.value = _value;
         transaction.data = _data;
         
-        bytes32 transactionHash = _hashTransaction(_id, _to, _value, _data);
+        
 
         for (uint256 i = 0; i < _signatures.length; i++) {
+            uint256 _signersNonce = _signersNonces[i];
+            bytes32 transactionHash = _hashTransaction(_id, _to,  _value, _data, _signersNonce);
             address signer = _recoverSigner(transactionHash, _signatures[i]);
             if (signersNonces[signer] != _signersNonces[i]) revert InvalidNonce();
             
@@ -157,6 +164,11 @@ contract MultiSigWallet is ReentrancyGuard {
         if (_signatures.length == 0) revert NotEnoughSignatures();
         if (_signersNonce.length != _signatures.length) revert InvalidSigner();
 
+        for (uint256 i = 0; i < _signatures.length; i++) {
+            if (seenSignatures[keccak256(_signatures[i])]) revert SignatureAlreadyUsed();
+            seenSignatures[keccak256(_signatures[i])] = true;
+        }
+
         _validateSigners(_signers, _minNumberOfSigners);
 
         uint256 _id = signerUpdateProposalCount++;
@@ -166,9 +178,10 @@ contract MultiSigWallet is ReentrancyGuard {
         proposal.minNumberOfSigners = _minNumberOfSigners;
 
         uint256 _signatureCount = _signatures.length;
-        bytes32 updateHash = _hashSignerUpdate(_id, _signers, _minNumberOfSigners);
+       
 
         for (uint256 i = 0; i < _signatureCount; i++) {
+            bytes32 updateHash = _hashSignerUpdate(_id, _signersNonce[i], _signers, _minNumberOfSigners);
             address signer = _recoverSigner(updateHash, _signatures[i]);
             if (!isSigner(signer)) revert InvalidSigner();
             if (signersNonces[signer] != _signersNonce[i]) revert InvalidNonce();
@@ -231,6 +244,14 @@ contract MultiSigWallet is ReentrancyGuard {
         return DOMAIN_SEPARATOR;
     }
 
+    /**
+     * @notice Returns the current signer update proposal count
+     * @return The current signer update proposal count
+     */
+    function getSignerUpdateProposalCount() external view returns (uint256) {
+        return signerUpdateProposalCount;
+    }
+
     // Internal functions
 
     /**
@@ -245,7 +266,8 @@ contract MultiSigWallet is ReentrancyGuard {
         uint256 _id,
         address _to,
         uint256 _value,
-        bytes memory _data
+        bytes memory _data,
+        uint256 _signersNonce
     ) internal view returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -254,6 +276,7 @@ contract MultiSigWallet is ReentrancyGuard {
                 _to,
                 _value,
                 keccak256(_data),
+                _signersNonce,
                 chainId
             )
         );
@@ -263,12 +286,14 @@ contract MultiSigWallet is ReentrancyGuard {
     /**
      * @notice Creates a hash of the signer update data according to EIP-712
      * @param _id Proposal ID
+     * @param _signersNonce Signers nonce
      * @param _signers New signer addresses
      * @param _minNumberOfSigners New threshold
      * @return The EIP-712 compatible hash of the signer update
      */
     function _hashSignerUpdate(
         uint256 _id,
+        uint256 _signersNonce,
         address[] memory _signers,
         uint256 _minNumberOfSigners
     ) internal view returns (bytes32) {
@@ -276,6 +301,7 @@ contract MultiSigWallet is ReentrancyGuard {
             abi.encode(
                 SIGNER_UPDATE_TYPEHASH,
                 _id,
+                _signersNonce,
                 keccak256(abi.encodePacked(_signers)),
                 _minNumberOfSigners,
                 chainId
