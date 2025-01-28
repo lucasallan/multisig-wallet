@@ -18,6 +18,7 @@ error SignerArrayNotOrdered();
 error SignatureAlreadyUsed();
 error EmptyTransaction();
 error InvalidNonce();
+error TransactionFailed();
 
 contract MultiSigWallet is ReentrancyGuard {
     bytes32 private constant DOMAIN_TYPEHASH = keccak256(
@@ -143,6 +144,7 @@ contract MultiSigWallet is ReentrancyGuard {
         if (transaction.signatureCount < threshold) revert NotEnoughSignatures();
 
         (bool success, ) = _to.call{value: _value}(_data);
+        if (!success) revert TransactionFailed();
         emit TransactionExecuted(_id, msg.sender, _to, _value, success);
         return _id;
     }
