@@ -108,7 +108,7 @@ contract MultiSigWallet is ReentrancyGuard {
         bytes memory _data,
         bytes[] memory _signatures,
         uint256[] memory _signersNonces
-    ) external nonReentrant returns (uint256) {
+    ) external nonReentrant returns (bytes memory) {
         if (_to == address(0)) revert EmptyTransaction();
         if (_signatures.length < threshold) revert NotEnoughSignatures();
         if (_signersNonces.length != _signatures.length) revert InvalidNonce();
@@ -143,10 +143,10 @@ contract MultiSigWallet is ReentrancyGuard {
 
         if (transaction.signatureCount < threshold) revert NotEnoughSignatures();
 
-        (bool success, ) = _to.call{value: _value}(_data);
+        (bool success, bytes memory data ) = _to.call{value: _value}(_data);
         if (!success) revert TransactionFailed();
         emit TransactionExecuted(_id, msg.sender, _to, _value, success);
-        return _id;
+        return data;
     }
 
     /**
