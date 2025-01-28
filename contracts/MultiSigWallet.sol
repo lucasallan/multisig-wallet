@@ -25,7 +25,7 @@ contract MultiSigWallet is ReentrancyGuard {
     );
     
     bytes32 private constant TRANSACTION_TYPEHASH = keccak256(
-        "Transaction(uint256 id,address to,uint256 value,bytes data,int256 signersNonce,uint256 chainId)"
+        "Transaction(uint256 id,address to,uint256 value,bytes data,uint256 signersNonce,uint256 chainId)"
     );
     
     bytes32 private constant SIGNER_UPDATE_TYPEHASH = keccak256(
